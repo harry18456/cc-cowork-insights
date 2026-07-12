@@ -1,0 +1,21 @@
+{
+  "name": "cowork-insights",
+  "displayName": "Cowork Insights",
+  "version": "0.1.0",
+  "description": "Cowork-only usage analytics for Claude Desktop — full-history session/token/model/tool report with no 30-day limit. Read-only, zero-dependency (Python stdlib), Windows.",
+  "author": {
+    "name": "Harry",
+    "url": "https://github.com/harry18456"
+  },
+  "homepage": "https://github.com/harry18456/cc-cowork-insights",
+  "repository": "https://github.com/harry18456/cc-cowork-insights",
+  "license": "MIT",
+  "keywords": ["cowork", "usage", "insights", "analytics", "tokens", "claude-desktop", "claude-code"],
+  "userConfig": {
+    "output_dir": {
+      "type": "directory",
+      "title": "Report output directory",
+      "description": "Where cowork-insights writes its reports. Leave empty to use the plugin data directory (or ~/.claude/usage-data/cowork-insights as fallback)."
+    }
+  }
+}

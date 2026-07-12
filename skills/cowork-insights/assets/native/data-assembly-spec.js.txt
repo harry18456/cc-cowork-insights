@@ -1,0 +1,19 @@
+async function yW_(e,t){let r=Array.from(t.values()).slice(0,50).map((E)=>`- ${E.brief_summary} (${E.outcome}, ${E.claude_helpfulness})`).join(`
+`),n=Array.from(t.values()).filter((E)=>E.friction_detail).slice(0,20).map((E)=>`- ${E.friction_detail}`).join(`
+`),o=Array.from(t.values()).flatMap((E)=>E.user_instructions_to_claude||[]).slice(0,15).map((E)=>`- ${E}`).join(`
+`),s=ke({sessions:e.total_sessions,analyzed:e.sessions_with_facets,date_range:e.date_range,messages:e.total_messages,hours:Math.round(e.total_duration_hours),commits:e.git_commits,top_tools:Object.entries(e.tool_counts).sort((E,b)=>b[1]-E[1]).slice(0,8),top_goals:Object.entries(e.goal_categories).sort((E,b)=>b[1]-E[1]).slice(0,8),outcomes:e.outcomes,satisfaction:e.satisfaction,friction:e.friction,success:e.success,languages:e.languages},null,2)+`
+
+SESSION SUMMARIES:
+`+r+`
+
+FRICTION DETAILS:
+`+n+`
+
+USER INSTRUCTIONS TO CLAUDE:
+`+(o||"None captured"),a=await Promise.all(gW_.map((E)=>ADp(E,s))),l={};for(let{name:E,result:b}of a)if(b)l[E]=b;let c=l.project_areas?.areas?.map((E)=>`- ${E.name}: ${E.description}`).join(`
+`)||"",u=l.what_works?.impressive_workflows?.map((E)=>`- ${E.title}: ${E.description}`).join(`
+`)||"",d=l.friction_analysis?.categories?.map((E)=>`- ${E.category}: ${E.description}`).join(`
+`)||"",p=l.suggestions?.features_to_try?.map((E)=>`- ${E.feature}: ${E.one_liner}`).join(`
+`)||"",f=l.suggestions?.usage_patterns?.map((E)=>`- ${E.title}: ${E.suggestion}`).join(`
+`)||"",m=l.on_the_horizon?.opportunities?.map((E)=>`- ${E.title}: ${E.whats_possible}`).join(`
+`)||"",
