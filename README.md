@@ -2,7 +2,7 @@
 
 問 Claude「**我的 Cowork 用了多少 token?**」或「**幫我分析 Cowork 用得怎麼樣**」,就能拿到這台機器的 **Cowork-only 分析** —— 跟內建 `/insights` 同級的兩層報告,差別只在來源整理成 Cowork-only、視窗可調。
 
-- **就是原生 /insights 的管線,只換來源**:skill 內含從內建引擎逐字抽出的全套 prompt(facet 抽取、7 個章節合成、At-a-Glance)與同款報告模板(`skills/cowork-insights/assets/native/`,來源見其 `provenance.md`)——分析流程與產出版式與原版一致,唯一差異是來源被整理成 Cowork-only
+- **就是原生 /insights 的管線,換來源、建議指引改指 Cowork**:skill 內含從內建引擎抽出的全套 prompt(facet 抽取、7 個章節合成、At-a-Glance)與同款報告模板(`skills/cowork-insights/assets/native/`,來源與改寫紀錄見其 `provenance.md`)——分析流程與產出版式與原版一致;7 個章節 prompt 中 5 個逐字不變,`suggestions` 的功能查表與 `on_the_horizon` 的工具提示改指 Cowork 實際可行途徑(Claude app 設定,非 CLI 指令/dotfiles——Cowork 沙箱讀不到 `~/.claude`,原生 CLI 作法在 Cowork 無法執行)
 - **30 天窗與原生一致(寫死)**:數字可直接對照;進階需求才用 `--days N|all` 拉長(原生做不到)。本工具純唯讀——內建的啟動清理會實體刪除逾期 transcript,我們不動任何檔案
 - **唯讀、零依賴、不連網**:純 Python stdlib,只讀既有 session JSONL
 - **計量正確**:四欄位 token 併計(prompt cache 通常佔 ~99%,只算 input+output 會低估約 100 倍);`audit.jsonl` 稽核副本自動排除避免重複計量;subagent 用量計入 token 但不灌水 session 數
