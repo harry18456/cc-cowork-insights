@@ -1,68 +1,70 @@
+English | [繁體中文](README.zh-TW.md)
+
 # cowork-insights
 
-問 Claude「**我的 Cowork 用了多少 token?**」或「**幫我分析 Cowork 用得怎麼樣**」,就能拿到這台機器的 **Cowork-only 分析** —— 跟內建 `/insights` 同級的兩層報告,差別只在來源整理成 Cowork-only、視窗可調。
+Ask Claude "**how many tokens has my Cowork used?**" or "**analyze how I've been using Cowork**" and get a **Cowork-only analysis** for this machine — a two-layer report on par with the built-in `/insights`, differing only in that sources are curated to Cowork and the window is adjustable.
 
-- **就是原生 /insights 的管線,換來源、建議指引改指 Cowork**:skill 內含從內建引擎抽出的全套 prompt(facet 抽取、7 個章節合成、At-a-Glance)與同款報告模板(`skills/cowork-insights/assets/native/`,來源與改寫紀錄見其 `provenance.md`)——分析流程與產出版式與原版一致;7 個章節 prompt 中 5 個逐字不變,`suggestions` 的功能查表與 `on_the_horizon` 的工具提示改指 Cowork 實際可行途徑(Claude app 設定,非 CLI 指令/dotfiles——Cowork 沙箱讀不到 `~/.claude`,原生 CLI 作法在 Cowork 無法執行)
-- **30 天窗與原生一致(寫死)**:數字可直接對照;進階需求才用 `--days N|all` 拉長(原生做不到)。本工具純唯讀——內建的啟動清理會實體刪除逾期 transcript,我們不動任何檔案
-- **唯讀、零依賴、不連網**:純 Python stdlib,只讀既有 session JSONL
-- **計量正確**:四欄位 token 併計(prompt cache 通常佔 ~99%,只算 input+output 會低估約 100 倍);`audit.jsonl` 稽核副本自動排除避免重複計量;subagent 用量計入 token 但不灌水 session 數
-- **漂移自檢**:audit 檔數 ↔ 隔離 session 數 1:1 一致性檢查(恆為全母體、不受視窗影響),Claude Desktop log 佈局改版時會出警告而不是默默給錯數字
+- **It IS the native /insights pipeline — only the sources and the advice targeting change**: the skill ships the full prompt set extracted from the built-in engine (facet extraction, the 7 section-synthesis prompts, At-a-Glance) plus the same report template (`skills/cowork-insights/assets/native/`; see its `provenance.md` for origins and the modification log). The analysis flow and output layout match the original; 5 of the 7 section prompts are verbatim, while the feature lookup table in `suggestions` and the tool tips in `on_the_horizon` are retargeted to what is actually actionable in Cowork (Claude app Settings — not CLI commands/dotfiles, since the Cowork sandbox cannot read `~/.claude` and the native CLI approaches don't work there)
+- **30-day window matches native (hard-coded)**: numbers are directly comparable; only reach for `--days N|all` for advanced needs (something native can't do). This tool is strictly read-only — the built-in startup cleanup physically deletes expired transcripts; we never touch any files
+- **Read-only, zero-dependency, no network**: pure Python stdlib, only reads existing session JSONL files
+- **Correct accounting**: sums all four token fields (prompt cache is usually ~99%; counting only input+output underestimates by ~100×); `audit.jsonl` audit copies are auto-excluded to avoid double counting; subagent usage counts toward tokens without inflating session counts
+- **Drift self-check**: a 1:1 consistency check between audit file count and isolated session count (always over the full population, unaffected by the window) — if a Claude Desktop update changes the log layout, you get a warning instead of silently wrong numbers
 
-> ⚠️ **僅在 Windows(MSIX 版 Claude Desktop)驗證**。LAMS 路徑偵測依賴 `%LOCALAPPDATA%` / `%APPDATA%`;其他平台可用 `CLAUDE_COWORK_ROOT` 環境變數手動指定。需要 Python 3(建議 3.10+)。
+> ⚠️ **Only verified on Windows (MSIX Claude Desktop)**. LAMS path detection relies on `%LOCALAPPDATA%` / `%APPDATA%`; on other platforms point the `CLAUDE_COWORK_ROOT` environment variable at the right place manually. Requires Python 3 (3.10+ recommended).
 
-## 安裝
+## Installation
 
 ```
 /plugin marketplace add harry18456/cc
 /plugin install cowork-insights@harry18456
 ```
 
-重開 Claude Code 生效。啟用時會詢問報告輸出目錄(可留空,見下方預設落點)。
+Restart Claude Code to take effect. On enable it asks for a report output directory (may be left empty; see the default location below).
 
-### 本機立即使用(免 push、免 marketplace)
+### Use locally right away (no push, no marketplace)
 
-把 repo 以 junction 連到 skills 目錄,下個 session 就自動以 `cowork-insights@skills-dir` 載入:
+Junction the repo into the skills directory and the next session auto-loads it as `cowork-insights@skills-dir`:
 
 ```powershell
 New-Item -ItemType Junction -Path "$env:USERPROFILE\.claude\skills\cowork-insights" -Target "D:\side_project\cc-cowork-insights"
 ```
 
-> ⚠️ 之後改從 marketplace 正式安裝前,先移除這個 junction(`Remove-Item $env:USERPROFILE\.claude\skills\cowork-insights`),避免同名 skill 重複載入。
+> ⚠️ Before switching to a proper marketplace install later, remove this junction first (`Remove-Item $env:USERPROFILE\.claude\skills\cowork-insights`) to avoid loading the same-named skill twice.
 
-## 使用
+## Usage
 
-裝好後直接用自然語言問即可(skill 會自動觸發):
+Once installed, just ask in natural language (the skill triggers automatically):
 
-- 「跑一份 Cowork insights」→ 產出與原生同款的 `cowork_report.html`(30 天窗)
-- 「Cowork 用了多少 token?」→ 對話內快速量化(cache 佔比、audit 自檢)
-- 「幫我分析 Cowork 用得怎麼樣?」→ 對話內兩層摘要(趕時間版)
-- 進階:「看過去 90 天 / 完整歷史」(`--days`,原生做不到)
+- "Run a Cowork insights report" → produces `cowork_report.html` in the same format as native (30-day window)
+- "How many tokens has Cowork used?" → quick in-chat numbers (cache share, audit self-check)
+- "Analyze how I've been using Cowork" → two-layer in-chat summary (the in-a-hurry version)
+- Advanced: "look at the past 90 days / the full history" (`--days`, which native can't do)
 
-想跑「100% 原廠引擎親自出的報告」:`--stage` 會把 Cowork 來源整理成獨立 config dir,複製 `.claude.json` 與 `.credentials.json` 進去後,互動啟動 `CLAUDE_CONFIG_DIR=<stage> claude` 輸入 `/insights` 即可(內建指令為互動限定,`-p` 不展開;**用完記得刪除 stage 內的憑證副本**)。
+Want a report "produced 100% by the factory engine itself"? `--stage` curates the Cowork sources into a standalone config dir; copy `.claude.json` and `.credentials.json` into it, then interactively launch `CLAUDE_CONFIG_DIR=<stage> claude` and type `/insights` (the built-in command is interactive-only; `-p` won't expand it; **remember to delete the credential copies inside the stage when done**).
 
-也可手動指定輸出目錄:「跑 cowork insights,結果放到 `D:\reports`」。
+You can also name the output directory yourself: "run cowork insights, put the results in `D:\reports`".
 
-產出:對話內報告 + 三個檔案 —— `cowork_full.json`(逐 session 明細)、`cowork_digest.json`(質化分析用的來源整理)、`cowork_insights.html`(可開瀏覽器看)。
+Output: the in-chat report + three files — `cowork_full.json` (per-session detail), `cowork_digest.json` (curated sources for the qualitative analysis), `cowork_insights.html` (open in a browser).
 
-報告檔預設落點:plugin 的持久資料目錄(官方 `${CLAUDE_PLUGIN_DATA}`),即 `~\.claude\plugins\data\cowork-insights-<來源>\` —— **目錄字尾隨安裝來源而異**:marketplace 安裝是 `-harry18456`、`--plugin-dir` 載入是 `-inline`、skills-dir 是 `-skills-dir`;plugin 更新不會清掉這裡。啟用時若在 output_dir 設定了位置則優先;非 plugin 情境 fallback 到 `~\.claude\usage-data\cowork-insights\`。**不會寫進你當下的專案目錄**。
+Default report location: the plugin's persistent data directory (the official `${CLAUDE_PLUGIN_DATA}`), i.e. `~\.claude\plugins\data\cowork-insights-<source>\` — **the directory suffix depends on the install source**: `-harry18456` for marketplace installs, `-inline` for `--plugin-dir` loading, `-skills-dir` for skills-dir loading; plugin updates don't clear it. If output_dir was set at enable time, that wins; outside plugin contexts it falls back to `~\.claude\usage-data\cowork-insights\`. **It never writes into your current project directory.**
 
-> ⚠️ **解除安裝會順帶刪掉資料目錄**(裡面的報告一起消失)。想保留報告用 `claude plugin uninstall cowork-insights --keep-data`,或啟用時把 output_dir 設到自己的資料夾。
+> ⚠️ **Uninstalling also deletes the data directory** (the reports inside vanish with it). To keep reports, use `claude plugin uninstall cowork-insights --keep-data`, or set output_dir to a folder of your own at enable time.
 
-## 測試
+## Testing
 
-不經 Claude 直接跑 script(應印出 JSON summary 並寫出兩個報告檔):
+Run the script directly without Claude (should print a JSON summary and write two report files):
 
 ```
 python "<plugin>/skills/cowork-insights/scripts/cowork_insights.py" %TEMP%\cowork-test
 ```
 
-## 注意事項
+## Notes
 
-- **只能在 host 端跑**:Cowork 隔離沙箱內看不到其他 session,報告會近乎空白;skill 內建此檢查。
-- **與內建 `/insights` 的分工**:分析類型相同(量化+質化),本工具只看 Cowork 來源、視窗可調;要「整台機器全部 session」的分析請用內建 `/insights`。
-- **隱私**:報告含各 session 的 cwd 路徑;分享報告檔前先確認。
-- **版本漂移**:Claude Desktop 的 log 內部結構未文件化(以 v2.1.197 實測),更新後若出現 audit 一致性警告,見 skill 內 `references/cowork-log-layout.md` 的排查步驟。
+- **Host-side only**: inside the Cowork isolation sandbox other sessions aren't visible and the report comes out nearly empty; the skill has this check built in.
+- **Division of labor vs the built-in `/insights`**: same type of analysis (quantitative + qualitative); this tool only looks at Cowork sources and has an adjustable window. For "every session on the whole machine", use the built-in `/insights`.
+- **Privacy**: the report contains each session's cwd path; check before sharing report files.
+- **Version drift**: the internal structure of Claude Desktop logs is undocumented (tested against v2.1.197). If an audit consistency warning shows up after an update, see the troubleshooting steps in the skill's `references/cowork-log-layout.md`.
 
-## 這個 plugin 的組件
+## This plugin's components
 
-目前只用了 **skills**(`skills/cowork-insights/`,Claude Code 自動發現、不必在 plugin.json 宣告)。`commands/`、`agents/`、`hooks/`、`output-styles/`、`bin/` 為預留骨架,日後擴充直接放檔案即可。
+Currently uses **skills** only (`skills/cowork-insights/`, auto-discovered by Claude Code — no plugin.json declaration needed). `commands/`, `agents/`, `hooks/`, `output-styles/`, `bin/` are reserved skeletons; future extensions just drop files in.
