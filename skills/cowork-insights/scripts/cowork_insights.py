@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """cowork-insights: Cowork-only usage aggregation for HOST Claude Code.
 
+KEEP IN SYNC with cowork_insights.ps1 (PowerShell port for machines without
+Python). Outputs are byte-identical by design; when changing behavior here,
+mirror it there and re-run a differential comparison of the three output
+files over the same data.
+
 Read-only. Scans the host projects tree AND the Cowork
 (local-agent-mode-sessions) tree, keeps only Cowork-origin sessions, and
 reports usage with NO 30-day limit and NO startup cleanup deletion.
