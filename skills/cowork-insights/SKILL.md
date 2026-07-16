@@ -1,7 +1,7 @@
 ---
 name: cowork-insights
 description: Run the REAL built-in /insights engine on this machine's Claude Desktop / Cowork sessions only — same engine, same pipeline, same report template, same 30-day window; two deviations — sources curated to Cowork-only, and the advice sections' feature guidance retargeted to Cowork's real mechanisms (Claude app Settings, not CLI/dotfiles). Also offers an instant in-chat summary (tokens incl. prompt cache, sessions, models, friction) when the user just wants numbers fast. Strictly read-only on transcripts. Use this whenever the user asks about Cowork usage, cost, tokens, session statistics, or wants Cowork usage reviewed — e.g. "Cowork 用了多少 token", "幾個 Cowork session", "Cowork 用量分析 / 使用統計 / insights", "Cowork 用得怎麼樣 / 幫我分析 Cowork 使用狀況" — or complains that the built-in /insights cannot see Cowork sessions. Host-side only.
-allowed-tools: Bash(python:*), Bash(py:*), Read
+allowed-tools: Bash(python:*), Bash(py:*), Bash(powershell:*), Bash(pwsh:*), Read
 ---
 
 # Cowork Insights
@@ -14,11 +14,17 @@ allowed-tools: Bash(python:*), Bash(py:*), Read
 
 ## 2. 執行聚合器
 
-script 位於本 skill 目錄下的 `scripts/cowork_insights.py`(skill 載入時系統會標出 base directory,用它組出絕對路徑):
+聚合器有兩份行為一致的實作(輸出 byte-identical,由差分測試保證):`scripts/cowork_insights.py` 與 `scripts/cowork_insights.ps1`,都在本 skill 目錄下(skill 載入時系統會標出 base directory,用它組出絕對路徑):
 
 ```bash
 python "<skill-base-dir>/scripts/cowork_insights.py" [輸出目錄]
 ```
+
+- **Runtime 依序挑第一個「實際執行成功」的:`python` → `py` → `powershell`(Windows 內建,零安裝)**。判定不能只看指令存不存在——乾淨的 Windows 有 Microsoft Store 假 stub,`python` 在 PATH 上但執行只印商店安裝提示(exit code 9009),所以要以執行結果為準。PowerShell 版用法(參數對照 `--days`↔`-Days`、`--stage`↔`-Stage`,輸出目錄同為第一個位置參數;有 pwsh 7 亦可用 `pwsh`):
+
+  ```
+  powershell -NoProfile -ExecutionPolicy Bypass -File "<skill-base-dir>/scripts/cowork_insights.ps1" [輸出目錄] [-Days N|all] [-Stage DIR]
+  ```
 
 - **分析視窗寫死 30 天,與原生一致**(script 預設即 30;只有使用者明確要求不同期間才用 `--days N|all`——那是原生做不到的加值)。本工具**絕不刪除任何檔案**(內建工具的啟動清理會實體刪檔,這是兩回事)。
 - 輸出目錄的決定順序——把**第一個顯示為實際路徑**的傳給 script;顯示成 `${...}` 字面或空白就跳過該項:
@@ -26,8 +32,7 @@ python "<skill-base-dir>/scripts/cowork_insights.py" [輸出目錄]
   2. 啟用 plugin 時設定的 output_dir:`${user_config.output_dir}`
   3. plugin 持久資料目錄:`${CLAUDE_PLUGIN_DATA}`(目錄字尾隨安裝來源而異:marketplace 名 / `inline` / `skills-dir`)
   4. 都沒有 → 不傳參數,script 自選(marketplace 安裝→plugin data dir;否則 `~/.claude/usage-data/cowork-insights/`)。**任何情況都不會寫進當下專案目錄**。
-- `python` 不存在時改試 `py`。
-- 特殊環境可用環境變數覆寫:`CLAUDE_CONFIG_DIR`(host config dir)、`CLAUDE_COWORK_ROOT`(明確指定 LAMS 樹路徑)。
+- 特殊環境可用環境變數覆寫:`CLAUDE_CONFIG_DIR`(host config dir)、`CLAUDE_COWORK_ROOT`(明確指定 LAMS 樹路徑)。兩份實作讀同一組環境變數。
 
 script 的判別邏輯(已對實際檔案系統驗證):掃 host projects 樹 + Cowork(local-agent-mode-sessions,下稱 LAMS)樹,session 判別器為 `entrypoint ∈ {local-agent, claude-desktop}` **或** 檔案位於 LAMS 樹下;先排除單行 `ai-title` 雜檔;`audit.jsonl` 全數排除(與 transcript 記錄同一批 API 呼叫,計入會重複);`subagents/*.jsonl` 計入 token 總量但不算 session 數。
 
@@ -52,6 +57,8 @@ script 的判別邏輯(已對實際檔案系統驗證):掃 host projects 樹 + C
 ```bash
 python "<skill-base-dir>/scripts/cowork_insights.py" <out> --stage <out>/stage
 ```
+
+(沒有 Python 時:`powershell -NoProfile -ExecutionPolicy Bypass -File "<skill-base-dir>/scripts/cowork_insights.ps1" <out> -Stage <out>/stage`。)
 
 然後請使用者把 `~/.claude/.claude.json` 與 `~/.claude/.credentials.json` 複製進 `<out>/stage/`,互動啟動 `CLAUDE_CONFIG_DIR=<out>/stage claude` 並輸入 `/insights`;報告會在 `<out>/stage/usage-data/report.html`。**跑完提醒使用者刪除 stage 裡的憑證副本。**
 

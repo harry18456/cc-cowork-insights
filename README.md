@@ -6,11 +6,11 @@ Ask Claude "**how many tokens has my Cowork used?**" or "**analyze how I've been
 
 - **It IS the native /insights pipeline — only the sources and the advice targeting change**: the skill ships the full prompt set extracted from the built-in engine (facet extraction, the 7 section-synthesis prompts, At-a-Glance) plus the same report template (`skills/cowork-insights/assets/native/`; see its `provenance.md` for origins and the modification log). The analysis flow and output layout match the original; 5 of the 7 section prompts are verbatim, while the feature lookup table in `suggestions` and the tool tips in `on_the_horizon` are retargeted to what is actually actionable in Cowork (Claude app Settings — not CLI commands/dotfiles, since the Cowork sandbox cannot read `~/.claude` and the native CLI approaches don't work there)
 - **30-day window matches native (hard-coded)**: numbers are directly comparable; only reach for `--days N|all` for advanced needs (something native can't do). This tool is strictly read-only — the built-in startup cleanup physically deletes expired transcripts; we never touch any files
-- **Read-only, zero-dependency, no network**: pure Python stdlib, only reads existing session JSONL files
+- **Read-only, zero-dependency, no network**: two byte-identical collector implementations — pure Python stdlib, plus a PowerShell 5.1 port (`cowork_insights.ps1`) so a Windows machine **without Python** still works out of the box; both only read existing session JSONL files
 - **Correct accounting**: sums all four token fields (prompt cache is usually ~99%; counting only input+output underestimates by ~100×); `audit.jsonl` audit copies are auto-excluded to avoid double counting; subagent usage counts toward tokens without inflating session counts
 - **Drift self-check**: a 1:1 consistency check between audit file count and isolated session count (always over the full population, unaffected by the window) — if a Claude Desktop update changes the log layout, you get a warning instead of silently wrong numbers
 
-> ⚠️ **Only verified on Windows (MSIX Claude Desktop)**. LAMS path detection relies on `%LOCALAPPDATA%` / `%APPDATA%`; on other platforms point the `CLAUDE_COWORK_ROOT` environment variable at the right place manually. Requires Python 3 (3.10+ recommended).
+> ⚠️ **Only verified on Windows (MSIX Claude Desktop)**. LAMS path detection relies on `%LOCALAPPDATA%` / `%APPDATA%`; on other platforms point the `CLAUDE_COWORK_ROOT` environment variable at the right place manually. Runs on Python 3 (3.10+ recommended) — or, with zero installs on Windows, on the in-box PowerShell 5.1+ via the bundled port.
 
 ## Installation
 
@@ -56,6 +56,12 @@ Run the script directly without Claude (should print a JSON summary and write tw
 
 ```
 python "<plugin>/skills/cowork-insights/scripts/cowork_insights.py" %TEMP%\cowork-test
+```
+
+No Python? The PowerShell port takes the same positional output dir (`--days` becomes `-Days`, `--stage` becomes `-Stage`) and produces byte-identical output:
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File "<plugin>/skills/cowork-insights/scripts/cowork_insights.ps1" %TEMP%\cowork-test
 ```
 
 ## Notes
