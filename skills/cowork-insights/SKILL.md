@@ -23,8 +23,10 @@ python "<skill-base-dir>/scripts/cowork_insights.py" [輸出目錄]
 - **Runtime 依序挑第一個「實際執行成功」的:`python` → `py` → `powershell`(Windows 內建,零安裝)**。判定不能只看指令存不存在——乾淨的 Windows 有 Microsoft Store 假 stub,`python` 在 PATH 上但執行只印商店安裝提示(exit code 9009),所以要以執行結果為準。PowerShell 版用法(參數對照 `--days`↔`-Days`、`--stage`↔`-Stage`,輸出目錄同為第一個位置參數;有 pwsh 7 亦可用 `pwsh`):
 
   ```
-  powershell -NoProfile -ExecutionPolicy Bypass -File "<skill-base-dir>/scripts/cowork_insights.ps1" [輸出目錄] [-Days N|all] [-Stage DIR]
+  powershell -NoProfile -File "<skill-base-dir>/scripts/cowork_insights.ps1" [輸出目錄] [-Days N|all] [-Stage DIR]
   ```
+
+  指令**刻意不帶** `-ExecutionPolicy` 旗標——"Bypass" 字樣會被自動權限分類器誤擋,而多數情況根本不需要它:原生 PowerShell 工具的行程本身就以 Bypass 執行(有該工具就優先用它跑);經 Bash 呼叫時,git clone 安裝的檔案沒有 MOTW,RemoteSigned 政策的機器也能直跑。只有全新桌面預設的 Restricted 會擋(錯誤訊息含「已停用指令碼執行 / running scripts is disabled」),此時唯一有效的備援才是加上 `-ExecutionPolicy Bypass` 重試(這時觸發權限確認是預期行為,請使用者核准;`Unblock-File` 解不掉 Restricted,別繞那條路)。GPO 強制策略(MachinePolicy/UserPolicy)連旗標都會覆寫,那種機器請改裝 Python 或請 IT 處理。
 
 - **分析視窗寫死 30 天,與原生一致**(script 預設即 30;只有使用者明確要求不同期間才用 `--days N|all`——那是原生做不到的加值)。本工具**絕不刪除任何檔案**(內建工具的啟動清理會實體刪檔,這是兩回事)。
 - 輸出目錄的決定順序——把**第一個顯示為實際路徑**的傳給 script;顯示成 `${...}` 字面或空白就跳過該項:
@@ -58,7 +60,7 @@ script 的判別邏輯(已對實際檔案系統驗證):掃 host projects 樹 + C
 python "<skill-base-dir>/scripts/cowork_insights.py" <out> --stage <out>/stage
 ```
 
-(沒有 Python 時:`powershell -NoProfile -ExecutionPolicy Bypass -File "<skill-base-dir>/scripts/cowork_insights.ps1" <out> -Stage <out>/stage`。)
+(沒有 Python 時:`powershell -NoProfile -File "<skill-base-dir>/scripts/cowork_insights.ps1" <out> -Stage <out>/stage`,policy 備援規則同第 2 節。)
 
 然後請使用者把 `~/.claude/.claude.json` 與 `~/.claude/.credentials.json` 複製進 `<out>/stage/`,互動啟動 `CLAUDE_CONFIG_DIR=<out>/stage claude` 並輸入 `/insights`;報告會在 `<out>/stage/usage-data/report.html`。**跑完提醒使用者刪除 stage 裡的憑證副本。**
 

@@ -1,7 +1,7 @@
 {
   "name": "cowork-insights",
   "displayName": "Cowork Insights",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Cowork-only usage analytics for Claude Desktop — full-history session/token/model/tool report with no 30-day limit. Read-only, zero-dependency (Python stdlib, or the in-box PowerShell port when Python is missing), Windows.",
   "author": {
     "name": "Harry",

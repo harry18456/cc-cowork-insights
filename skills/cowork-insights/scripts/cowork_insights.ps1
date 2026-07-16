@@ -25,6 +25,16 @@ Usage:
         --days N    ->  -Days N        (default 30, 'all' for full history)
         --stage DIR ->  -Stage DIR
 
+    The -ExecutionPolicy Bypass flag above is for HUMANS running this
+    from a stock shell: fresh Windows desktops default to Restricted.
+    The SKILL.md invocation deliberately omits it -- Claude Code's
+    native PowerShell tool already runs with a Process-scope Bypass,
+    git-cloned files carry no mark-of-the-web (so RemoteSigned machines
+    run them as-is), and the literal "Bypass" string trips automated
+    permission classifiers. When a run does hit Restricted, retrying
+    WITH the flag is the only working fallback (Unblock-File does not
+    lift Restricted; GPO-forced policies override even the flag).
+
 Optional overrides via env (same as Python):
     CLAUDE_CONFIG_DIR   -> host config dir (default: %USERPROFILE%\.claude)
     CLAUDE_COWORK_ROOT  -> explicit local-agent-mode-sessions path
