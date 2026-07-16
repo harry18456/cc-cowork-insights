@@ -1,5 +1,5 @@
 <#
-cowork-insights: Cowork-only usage aggregation for HOST Claude Code.
+cowork-insights: Cowork usage aggregation for HOST Claude Code.
 PowerShell port of cowork_insights.py for machines WITHOUT Python.
 
   !! KEEP IN SYNC WITH cowork_insights.py -- same discriminator, same        !!
@@ -11,10 +11,14 @@ Read-only. Scans the host projects tree AND the Cowork
 (local-agent-mode-sessions) tree, keeps only Cowork-origin sessions, and
 reports usage with NO 30-day limit and NO startup cleanup deletion.
 
-Validated discriminator (same as the Python implementation):
-    is_cowork = entrypoint in {"local-agent", "claude-desktop"}
+Scan criterion + confidence split (same as the Python implementation):
+    collected = entrypoint in {"local-agent", "claude-desktop"}
                 OR  file located under a local-agent-mode-sessions tree
     (single-line "ai-title" junk files are excluded first)
+    confirmed = LAMS tree OR entrypoint local-agent; host-tree
+    claude-desktop sessions are reported as a separate AMBIGUOUS bucket:
+    the desktop app stamps the same entrypoint on Cowork mounted-folder
+    and Code-tab sessions, so only the machine's user can tell them apart.
 
 Usage:
     powershell -NoProfile -ExecutionPolicy Bypass -File cowork_insights.ps1 `
@@ -1164,9 +1168,9 @@ function Write-HtmlReport([string]$path, $summary, $live) {
     if ($win['days']) {
         # Python "{:g}": 6 significant digits, lowercase exponent
         $daysG = ([double]$win['days']).ToString('G6', $script:Inv).Replace('E', 'e')
-        $h1 = "<h1>Cowork-only Insights &mdash; last $daysG days (analysis window only; nothing deleted)</h1>"
+        $h1 = "<h1>Cowork Insights &mdash; last $daysG days (analysis window only; nothing deleted)</h1>"
     } else {
-        $h1 = '<h1>Cowork-only Insights &mdash; full history</h1>'
+        $h1 = '<h1>Cowork Insights &mdash; full history</h1>'
     }
     $lastKeys = New-Object 'System.Collections.Generic.List[string]'
     foreach ($s in $live) {
@@ -1185,7 +1189,8 @@ function Write-HtmlReport([string]$path, $summary, $live) {
         if ($s['cwd']) { $cwd64 = [string]$s['cwd'] }
         $cwd64 = $esc::PyCut($cwd64, 64)
         $tokN = ([long]$s['token_total']).ToString('N0', $script:Inv)
-        [void]$rowsSb.Append('<tr><td>' + $esc::EscPy($s['kind']) + '</td><td>' + $esc::EscPy($s['entrypoint']) +
+        [void]$rowsSb.Append('<tr><td>' + $esc::EscPy($s['kind']) + '</td><td>' + $esc::EscPy($s['cowork_confidence']) +
+            '</td><td>' + $esc::EscPy($s['entrypoint']) +
             '</td><td>' + $esc::EscPy($s['model']) + '</td><td class=n>' + $s['messages'] +
             '</td><td class=n>' + $s['tool_calls'] + '</td><td class=n>' + $tokN +
             '</td><td class=n>' + $s['subagents'] + '</td><td>' + $esc::EscPy($first10) +
@@ -1208,10 +1213,17 @@ function Write-HtmlReport([string]$path, $summary, $live) {
         '.n{text-align:right}.c{font-size:11px;color:#555}' + "`n" +
         '.kpi{display:inline-block;margin:8px 20px 8px 0}.kpi b{font-size:22px;display:block}</style>' + "`n" +
         $h1 + "`n" +
-        '<div class=kpi>Sessions<b>' + $summary['cowork_sessions'] + '</b></div>' + "`n" +
+        '<div class=kpi>Sessions analyzed<b>' + $summary['sessions_analyzed'] + '</b></div>' + "`n" +
+        '<div class=kpi>Confirmed Cowork<b>' + $summary['cowork_confirmed']['sessions'] + '</b></div>' + "`n" +
+        '<div class=kpi>Desktop app (ambiguous)<b>' + $summary['desktop_app_ambiguous']['sessions'] + '</b></div>' + "`n" +
         '<div class=kpi>Grand total tokens<b>' + ([long]$summary['token_grand_total']).ToString('N0', $script:Inv) + '</b></div>' + "`n" +
         '<div class=kpi>input+output only<b>' + ([long]$summary['token_input_output_only']).ToString('N0', $script:Inv) + '</b></div>' + "`n" +
         '<div class=kpi>Span<b>' + $esc::EscPy($spanFirst10) + ' &rarr; ' + $esc::EscPy($spanLast10) + '</b></div>' + "`n" +
+        '<p>cowork confidence: confirmed=' + $summary['cowork_confirmed']['sessions'] + ' sessions / ' +
+        ([long]$summary['cowork_confirmed']['token_grand_total']).ToString('N0', $script:Inv) +
+        ' tokens &middot; desktop-app ambiguous=' + $summary['desktop_app_ambiguous']['sessions'] + ' / ' +
+        ([long]$summary['desktop_app_ambiguous']['token_grand_total']).ToString('N0', $script:Inv) +
+        ' &mdash; the desktop app stamps the same marker on Cowork mounted-folder and Code-tab sessions; ask the machine''s user which they use</p>' + "`n" +
         '<p>kinds = ' + $esc::EscPy($summary['kinds']) + ' &middot; entrypoints = ' + $esc::EscPy($summary['entrypoints']) + '</p>' + "`n" +
         '<p>tokens (incl. subagents): input=' + ([long]$tk['input_tokens']).ToString('N0', $script:Inv) +
         ' &middot; output=' + ([long]$tk['output_tokens']).ToString('N0', $script:Inv) +
@@ -1223,7 +1235,7 @@ function Write-HtmlReport([string]$path, $summary, $live) {
         $auditC['isolated_sessions'] + ' isolated sessions)</p>' + "`n" +
         '<p>models: ' + $esc::EscPy($summary['models']) + '</p>' + "`n" +
         '<p>top tools: ' + $esc::EscPy($summary['tools_top']) + '</p>' + "`n" +
-        '<table><tr><th>kind</th><th>entrypoint</th><th>model</th><th>msgs</th><th>tools</th><th>tokens</th><th>subs</th><th>date</th><th>cwd</th></tr>' + "`n" +
+        '<table><tr><th>kind</th><th>conf</th><th>entrypoint</th><th>model</th><th>msgs</th><th>tools</th><th>tokens</th><th>subs</th><th>date</th><th>cwd</th></tr>' + "`n" +
         $rows + '</table>'
     [CoworkInsights.Engine]::WriteFileUtf8Crlf($path, $doc)
 }
@@ -1275,6 +1287,12 @@ function Invoke-Main {
         if ($null -eq $sess) { continue }
         if (-not (($sess['entrypoint'] -cin $script:COWORK_ENTRYPOINTS) -or $inLams)) { continue }
         $sess['kind'] = Get-Kind $sess $inLams
+        # confidence follows the SIGNAL, not the kind (mirrors the Python spec)
+        if ($inLams -or ($sess['entrypoint'] -ceq 'local-agent')) {
+            $sess['cowork_confidence'] = 'confirmed'
+        } else {
+            $sess['cowork_confidence'] = 'ambiguous'
+        }
         $sess['subagents'] = [long]0
         $sess['subagent_tokens'] = [long]0
         $sessions.Add($sess)
@@ -1299,6 +1317,8 @@ function Invoke-Main {
     $subTokens = New-Object CoworkInsights.Counter
     $subTools = New-Object CoworkInsights.Counter
     $subCount = [long]0
+    $orphanConfTokens = [long]0
+    $orphanAmbTokens = [long]0
     foreach ($fp in $subagentFiles) {
         $parentDir = [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetDirectoryName($fp))  # .../<slug>/<session-uuid>/
         $pkey = ([System.IO.Path]::GetFullPath([System.IO.Path]::GetDirectoryName($parentDir))).ToLowerInvariant() +
@@ -1325,6 +1345,13 @@ function Invoke-Main {
         $subCount++
         foreach ($k in $info['tokens'].Keys) { $subTokens.Add($k, [long]$info['tokens'][$k]) }
         foreach ($k in $info['tools'].Keys) { $subTools.Add($k, [long]$info['tools'][$k]) }
+        if ($null -eq $parent) {  # attribute orphans by the same confidence signal
+            if ((Test-UnderAny $fp $lamsRoots) -or ($info['entrypoint'] -ceq 'local-agent')) {
+                $orphanConfTokens = $orphanConfTokens + [long]$info['token_total']
+            } else {
+                $orphanAmbTokens = $orphanAmbTokens + [long]$info['token_total']
+            }
+        }
     }
 
     # --- aggregates over the live window ---
@@ -1385,8 +1412,36 @@ function Invoke-Main {
     $lamsRootList = New-Object 'System.Collections.Generic.List[object]'
     foreach ($r in $lamsRoots) { $lamsRootList.Add([string]$r) }
 
+    # confirmed/ambiguous split over the live window; sums reconcile exactly
+    # with token_grand_total
+    $confSessions = [long]0
+    $ambSessions = [long]0
+    $confTokens = [long]$orphanConfTokens
+    $ambTokens = [long]$orphanAmbTokens
+    foreach ($s in $live) {
+        if ([string]$s['cowork_confidence'] -ceq 'confirmed') {
+            $confSessions++
+            $confTokens = $confTokens + [long]$s['token_total'] + [long]$s['subagent_tokens']
+        } else {
+            $ambSessions++
+            $ambTokens = $ambTokens + [long]$s['token_total'] + [long]$s['subagent_tokens']
+        }
+    }
+    $coworkConfirmed = New-Object CoworkInsights.PyDict
+    $coworkConfirmed['sessions'] = $confSessions
+    $coworkConfirmed['token_grand_total'] = $confTokens
+    $coworkConfirmed['note'] = 'LAMS tree or entrypoint local-agent: definitely Cowork'
+    $desktopAmbiguous = New-Object CoworkInsights.PyDict
+    $desktopAmbiguous['sessions'] = $ambSessions
+    $desktopAmbiguous['token_grand_total'] = $ambTokens
+    $desktopAmbiguous['note'] = 'host-tree claude-desktop: the desktop app stamps the same ' +
+        'entrypoint on Cowork mounted-folder AND Code-tab sessions, so the logs cannot ' +
+        'tell them apart -- ask the machine''s user (per-session cwd is in the digest)'
+
     $summary = New-Object CoworkInsights.PyDict
-    $summary['cowork_sessions'] = [long]$live.Count
+    $summary['sessions_analyzed'] = [long]$live.Count
+    $summary['cowork_confirmed'] = $coworkConfirmed
+    $summary['desktop_app_ambiguous'] = $desktopAmbiguous
     $summary['window'] = $window
     $summary['kinds'] = $kinds.ToDict()
     $summary['entrypoints'] = $eps.ToDict()
@@ -1405,8 +1460,8 @@ function Invoke-Main {
     $summary['lams_roots'] = $lamsRootList
 
     # qualitative digest: curated raw material for the model-side analysis
-    $keep = @('file', 'kind', 'entrypoint', 'model', 'cwd', 'first', 'last',
-              'messages', 'tool_calls', 'token_total', 'subagents')
+    $keep = @('file', 'kind', 'cowork_confidence', 'entrypoint', 'model', 'cwd',
+              'first', 'last', 'messages', 'tool_calls', 'token_total', 'subagents')
     $digest = New-Object 'System.Collections.Generic.List[object]'
     foreach ($s in $live) {
         $d = New-Object CoworkInsights.PyDict

@@ -19,6 +19,10 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 
 # 3. byte-compare the three report files (exit 0 = identical)
 python tests\compare_outputs.py $env:TEMP\ci-py $env:TEMP\ci-ps
+
+# 4. confidence-split invariant: confirmed + ambiguous token totals must
+#    equal token_grand_total exactly (exit 0 = reconciles)
+python tests\check_split.py $env:TEMP\ci-py\cowork_full.json
 ```
 
 Also run once against real data (unset the env overrides) — with the same

@@ -1,8 +1,8 @@
 {
   "name": "cowork-insights",
   "displayName": "Cowork Insights",
-  "version": "0.3.1",
-  "description": "Cowork-only usage analytics for Claude Desktop — full-history session/token/model/tool report with no 30-day limit. Read-only, zero-dependency (Python stdlib, or the in-box PowerShell port when Python is missing), Windows.",
+  "version": "0.4.0",
+  "description": "Cowork usage analytics for Claude Desktop — full-history session/token/model/tool report with no 30-day limit, split into confirmed Cowork vs ambiguous desktop-app sessions (the logs cannot tell Cowork's mounted mode from the Code tab). Read-only, zero-dependency (Python stdlib, or the in-box PowerShell port when Python is missing), Windows.",
   "author": {
     "name": "Harry",
     "url": "https://github.com/harry18456"

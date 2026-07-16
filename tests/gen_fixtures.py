@@ -157,6 +157,16 @@ def main():
         rec_asst(RECENT.format(s=42), model="model-B", ep=None),
     ])
 
+    # --- hhhh9999: local-agent entrypoint in the HOST tree -> kind=mounted
+    #     but cowork_confidence=confirmed (confidence follows the signal)
+    write_jsonl(slug_a / "hhhh9999.jsonl", [
+        rec_user("host-tree local-agent oddity", RECENT.format(s=45), ep="local-agent"),
+        rec_asst(RECENT.format(s=46), ep="local-agent",
+                 usage={"input_tokens": 71, "output_tokens": 72,
+                        "cache_read_input_tokens": 73,
+                        "cache_creation_input_tokens": 74}),
+    ])
+
     # --- host-tree audit.jsonl (excluded by name, counted) --------------------
     write_jsonl(slug_a / "audit.jsonl", [
         rec_user("audit copy", RECENT.format(s=50)),
@@ -176,6 +186,15 @@ def main():
                  usage={"input_tokens": 555, "output_tokens": 555,
                         "cache_read_input_tokens": 555,
                         "cache_creation_input_tokens": 555}),
+    ])
+    # orphan subagent (parent dir not an indexed session), claude-desktop ->
+    # counted via entrypoint rule, attributed to the AMBIGUOUS orphan bucket
+    write_jsonl(slug_a / "orphan2-dir" / "subagents" / "agent-qq.jsonl", [
+        rec_user("desktop orphan sub", RECENT.format(s=25), ep="claude-desktop"),
+        rec_asst(RECENT.format(s=26), ep="claude-desktop",
+                 usage={"input_tokens": 81, "output_tokens": 82,
+                        "cache_read_input_tokens": 83,
+                        "cache_creation_input_tokens": 84}),
     ])
     write_jsonl(slug_a / "dddd4444" / "subagents" / "agent-dd.jsonl", [
         rec_user("sub of old parent, recent itself", RECENT.format(s=7),

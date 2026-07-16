@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""cowork-insights: Cowork-only usage aggregation for HOST Claude Code.
+"""cowork-insights: Cowork usage aggregation for HOST Claude Code.
 
 KEEP IN SYNC with cowork_insights.ps1 (PowerShell port for machines without
 Python). Outputs are byte-identical by design; when changing behavior here,
@@ -10,14 +10,24 @@ Read-only. Scans the host projects tree AND the Cowork
 (local-agent-mode-sessions) tree, keeps only Cowork-origin sessions, and
 reports usage with NO 30-day limit and NO startup cleanup deletion.
 
-Validated discriminator:
-    is_cowork = entrypoint in {"local-agent", "claude-desktop"}
-                OR  file located under a local-agent-mode-sessions tree
+Scan criterion (which files get COLLECTED):
+    entrypoint in {"local-agent", "claude-desktop"}
+    OR  file located under a local-agent-mode-sessions tree
     (single-line "ai-title" junk files are excluded first)
+
+Confidence split (v3) -- collected does NOT mean confirmed:
+    confirmed  = under a LAMS tree OR entrypoint == "local-agent"
+    ambiguous  = host-tree claude-desktop: the desktop app stamps the SAME
+                 entrypoint on Cowork mounted-folder sessions AND Code-tab
+                 sessions, so the logs alone cannot tell them apart. They
+                 are reported as a separate bucket and never silently
+                 folded into "Cowork"; only the machine's user can resolve
+                 which they are.
 
 entrypoint meaning (empirically confirmed on this machine):
     local-agent      -> isolated Cowork (VM + local mode); lives under LAMS tree
-    claude-desktop   -> mounted-folder Cowork (Desktop app); lives in HOST tree
+    claude-desktop   -> desktop app backend (Cowork mounted-folder OR Code tab);
+                        lives in HOST tree
     cli / sdk-* / claude-vscode -> NOT Cowork
 
 Usage:
@@ -36,6 +46,13 @@ Usage:
 Optional overrides via env:
     CLAUDE_CONFIG_DIR   -> host config dir (default: %USERPROFILE%\\.claude)
     CLAUDE_COWORK_ROOT  -> explicit local-agent-mode-sessions path
+
+v3 (2026-07-16) vs v2:
+    * cowork_confidence per session + confirmed/ambiguous summary split.
+      Field evidence from a machine that uses the desktop Code tab showed
+      host-tree claude-desktop sessions being counted as Cowork when they
+      were plain Code usage; the old "0 misses / 0 false positives" claim
+      only held on machines whose desktop use happened to be Cowork-only.
 
 v2 (2026-07-11) fixes vs v1:
     * File discovery uses os.walk -- the glob module's "**" skips dot-
@@ -339,6 +356,12 @@ def main():
             continue
         sess = {**sess,
                 "kind": classify_kind(sess, in_lams),
+                # confidence follows the SIGNAL, not the kind: LAMS location
+                # and local-agent are hard Cowork evidence; a bare
+                # claude-desktop marker is shared with the desktop Code tab
+                "cowork_confidence": ("confirmed"
+                                      if (in_lams or sess["entrypoint"] == "local-agent")
+                                      else "ambiguous"),
                 "subagents": 0, "subagent_tokens": 0}
         sessions.append(sess)
         index[(str(fp.parent.resolve()), fp.stem)] = sess
@@ -350,6 +373,7 @@ def main():
 
     # subagent transcripts: real extra API usage, but not separate sessions
     sub_tokens, sub_tools, sub_count = Counter(), Counter(), 0
+    orphan_conf_tokens, orphan_amb_tokens = 0, 0
     for fp in subagent_files:
         parent_dir = fp.parent.parent          # .../<slug>/<session-uuid>/
         parent = index.get((str(parent_dir.parent.resolve()), parent_dir.name))
@@ -373,6 +397,11 @@ def main():
             sub_tokens[k] += v
         for t, c in info["tools"].items():
             sub_tools[t] += c
+        if parent is None:  # attribute orphans by the same confidence signal
+            if under_any(fp, lams_roots) or info["entrypoint"] == "local-agent":
+                orphan_conf_tokens += info["token_total"]
+            else:
+                orphan_amb_tokens += info["token_total"]
 
     agg = Counter()
     models, tools, kinds, eps = Counter(), Counter(), Counter(), Counter()
@@ -399,8 +428,32 @@ def main():
 
     # drift detector, not a usage stat: always checked over the FULL population
     iso_sessions = sum(1 for s in sessions if s["kind"] != "mounted")
+
+    # confirmed/ambiguous split over the live window; sums reconcile exactly
+    # with token_grand_total (attached subagent tokens ride their parent,
+    # orphans were attributed by signal above)
+    conf_live = [s for s in live if s["cowork_confidence"] == "confirmed"]
+    amb_live = [s for s in live if s["cowork_confidence"] == "ambiguous"]
+    conf_tokens = (sum(s["token_total"] + s["subagent_tokens"] for s in conf_live)
+                   + orphan_conf_tokens)
+    amb_tokens = (sum(s["token_total"] + s["subagent_tokens"] for s in amb_live)
+                  + orphan_amb_tokens)
+
     summary = {
-        "cowork_sessions": len(live),
+        "sessions_analyzed": len(live),
+        "cowork_confirmed": {
+            "sessions": len(conf_live),
+            "token_grand_total": conf_tokens,
+            "note": "LAMS tree or entrypoint local-agent: definitely Cowork",
+        },
+        "desktop_app_ambiguous": {
+            "sessions": len(amb_live),
+            "token_grand_total": amb_tokens,
+            "note": "host-tree claude-desktop: the desktop app stamps the same "
+                    "entrypoint on Cowork mounted-folder AND Code-tab sessions, "
+                    "so the logs cannot tell them apart -- ask the machine's "
+                    "user (per-session cwd is in the digest)",
+        },
         "window": {
             "days": days,
             "cutoff": cutoff,
@@ -431,8 +484,8 @@ def main():
     }
 
     # qualitative digest: curated raw material for the model-side analysis
-    keep = ("file", "kind", "entrypoint", "model", "cwd", "first", "last",
-            "messages", "tool_calls", "token_total", "subagents")
+    keep = ("file", "kind", "cowork_confidence", "entrypoint", "model", "cwd",
+            "first", "last", "messages", "tool_calls", "token_total", "subagents")
     digest = [{**{k: s[k] for k in keep}, **extract_signals(Path(s["file"]))}
               for s in live]
 
@@ -463,7 +516,8 @@ def write_html(path: Path, summary: dict, sessions: list):
     esc = lambda x: html.escape(str(x))
     tk = summary["tokens"]
     rows = "".join(
-        f"<tr><td>{esc(s['kind'])}</td><td>{esc(s['entrypoint'])}</td>"
+        f"<tr><td>{esc(s['kind'])}</td><td>{esc(s['cowork_confidence'])}</td>"
+        f"<td>{esc(s['entrypoint'])}</td>"
         f"<td>{esc(s['model'])}</td><td class=n>{s['messages']}</td>"
         f"<td class=n>{s['tool_calls']}</td><td class=n>{s['token_total']:,}</td>"
         f"<td class=n>{s['subagents']}</td>"
@@ -477,17 +531,20 @@ table{{border-collapse:collapse;width:100%;font-size:12px;margin-top:12px}}
 td,th{{border:1px solid #ddd;padding:4px 8px}}th{{background:#f4f4f4;text-align:left}}
 .n{{text-align:right}}.c{{font-size:11px;color:#555}}
 .kpi{{display:inline-block;margin:8px 20px 8px 0}}.kpi b{{font-size:22px;display:block}}</style>
-{"<h1>Cowork-only Insights &mdash; last " + f"{summary['window']['days']:g} days (analysis window only; nothing deleted)</h1>" if summary['window']['days'] else "<h1>Cowork-only Insights &mdash; full history</h1>"}
-<div class=kpi>Sessions<b>{summary['cowork_sessions']}</b></div>
+{"<h1>Cowork Insights &mdash; last " + f"{summary['window']['days']:g} days (analysis window only; nothing deleted)</h1>" if summary['window']['days'] else "<h1>Cowork Insights &mdash; full history</h1>"}
+<div class=kpi>Sessions analyzed<b>{summary['sessions_analyzed']}</b></div>
+<div class=kpi>Confirmed Cowork<b>{summary['cowork_confirmed']['sessions']}</b></div>
+<div class=kpi>Desktop app (ambiguous)<b>{summary['desktop_app_ambiguous']['sessions']}</b></div>
 <div class=kpi>Grand total tokens<b>{summary['token_grand_total']:,}</b></div>
 <div class=kpi>input+output only<b>{summary['token_input_output_only']:,}</b></div>
 <div class=kpi>Span<b>{esc((summary['span']['first'] or '')[:10])} &rarr; {esc((summary['span']['last'] or '')[:10])}</b></div>
+<p>cowork confidence: confirmed={summary['cowork_confirmed']['sessions']} sessions / {summary['cowork_confirmed']['token_grand_total']:,} tokens &middot; desktop-app ambiguous={summary['desktop_app_ambiguous']['sessions']} / {summary['desktop_app_ambiguous']['token_grand_total']:,} &mdash; the desktop app stamps the same marker on Cowork mounted-folder and Code-tab sessions; ask the machine's user which they use</p>
 <p>kinds = {esc(summary['kinds'])} &middot; entrypoints = {esc(summary['entrypoints'])}</p>
 <p>tokens (incl. subagents): input={tk['input_tokens']:,} &middot; output={tk['output_tokens']:,} &middot; cache_read={tk['cache_read_input_tokens']:,} &middot; cache_creation={tk['cache_creation_input_tokens']:,}</p>
 <p>subagent files counted: {summary['subagent_files_counted']} ({summary['subagent_token_total']:,} tokens) &middot; audit.jsonl excluded: {summary['audit_consistency']['audit_files_excluded']} (duplicate usage log; cross-check vs {summary['audit_consistency']['isolated_sessions']} isolated sessions)</p>
 <p>models: {esc(summary['models'])}</p>
 <p>top tools: {esc(summary['tools_top'])}</p>
-<table><tr><th>kind</th><th>entrypoint</th><th>model</th><th>msgs</th><th>tools</th><th>tokens</th><th>subs</th><th>date</th><th>cwd</th></tr>
+<table><tr><th>kind</th><th>conf</th><th>entrypoint</th><th>model</th><th>msgs</th><th>tools</th><th>tokens</th><th>subs</th><th>date</th><th>cwd</th></tr>
 {rows}</table>"""
     path.write_text(doc, encoding="utf-8")
 
