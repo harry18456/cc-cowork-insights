@@ -38,6 +38,8 @@ local-agent-mode-sessions\
 
 判別器(實測 0 漏 0 誤):`entrypoint ∈ {local-agent, claude-desktop}` ∪ 「檔案位於 LAMS 樹下」,前置排除單行 `ai-title` 雜檔。同一個 slug 目錄會混多種來源,必須逐檔看 entrypoint,不能只看目錄。
 
+> **2026-07-16 勘誤**:上行「0 漏 0 誤」只對本機成立——本機桌面 app 恰好只用 Cowork,沒有負樣本。他機實證:桌面 **Code 分頁** session 同樣寫 `entrypoint=claude-desktop`,此判準無法區分兩者。自 v0.4.0 起「收錄」與「確定」分離:收錄判準不變,另對每個 session 標 `cowork_confidence`——LAMS 樹或 `local-agent` = `confirmed`;host 樹 `claude-desktop` = `ambiguous`,由使用者判讀(SKILL.md 第 2b 節)。
+
 ## 檔案角色(2026-07-11 確立)
 
 | 檔案 | 角色 | 計量處理 |
@@ -60,3 +62,4 @@ audit 一致性警告(audit 檔數 ≠ 隔離 session 數)或數字異常時:
 2. 抽一對 audit / transcript,比對 assistant usage 的 message id 是否仍重疊(重疊 = audit 仍是副本,繼續排除;不重疊 = 計量規則要重新驗證)。
 3. 檢查是否出現新的 jsonl 檔種(比照 audit.jsonl 當年的出現方式)。
 4. 確認掛載型 entrypoint 是否仍為 `claude-desktop`(桌面 app 各分頁共用同一後端,此值不區分 Code / Cowork 分頁)。
+5. `cowork_confirmed.sessions` 為 0 但 ambiguous 很多:**不是漂移**——該機器可能只用桌面 Code 分頁、從未用過 Cowork;走 SKILL.md 第 2b 節問使用者,不要當資料異常排查。
