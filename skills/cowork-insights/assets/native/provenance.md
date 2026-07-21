@@ -47,7 +47,33 @@ instructions(非 `~/.claude/CLAUDE.md`);Scheduled tasks 與 Trusted Cowork folde
    (app Settings 或直接請 Claude;非 CLI/dotfiles)。
 3. `report-template.html`:`<h3>Suggested CLAUDE.md Additions</h3>` →
    `<h3>Suggested Global Instructions (Claude app &gt; Settings &gt; Cowork)</h3>`。
+4. `report-template.html` / Cowork 措辭:nav 連結「How You Use CC」與章節標題
+   `<h2>How You Use Claude Code</h2>` → 均改為「How You Use Cowork」。
+5. `report-template.html` / 重建骨架時的簡化(2026-07-22 對 v2.1.216 復核時補記;
+   非 Cowork 語義改寫,是抽取當時的取捨):
+   - 原生硬寫的 `<title>`/`<h1>`「Claude Code Insights」與 subtitle 組字改為
+     `{{TITLE}}`/`{{SUBTITLE}}` 填充點;
+   - 移除原生的 Google Fonts `<link>` 外連(報告須離線可開、不打外網);
+   - 移除 `<h3>` 下方的「Just copy this into Claude…」說明段;
+   - CSS 取原生 109 條規則中的 76 條(未收 copy 按鈕 / checkbox / feedback 卡片 /
+     collapsible / feature-example 等互動樣式——本管線產出靜態報告用不到);
+   - body 字型堆疊補了 `'Segoe UI'`。
 
 其餘全部維持逐字:`facet-prompt`、`chunk-summary-prompt`、`at-a-glance-prompt`、
 `data-assembly-spec`、另 5 個 section prompt(project_areas / interaction_style / what_works /
-friction_analysis / fun_ending)、模板其他部分。
+friction_analysis / fun_ending)。模板為同 CSS 骨架與章節結構的快照,逐項偏離以上面
+3–5 為完整清單。
+
+## 漂移復核紀錄
+
+- **2026-07-22 vs Claude Code v2.1.216**(對 exe 內嵌 bundle 逐 byte 比對):
+  - prompt 層零漂移——facet / chunk-summary / at-a-glance / 未改寫的 5 個 section
+    prompt / 兩個 enum 逐字相同(facet 與 chunk 檔尾多一個空行:原生字串在該處收尾、
+    引擎於其後續接 transcript 內容,實質等價);`suggestions` 與 `on_the_horizon`
+    對原生的全部差異即上方改動清單,JSON key 一致。
+  - minified 符號名已改(`yW_`→`Be_`、`_W_`→`je_`、`bW_`→`We_`),重抽時請以
+    prompt 內文錨點(如首句)搜尋定位,勿依符號名。
+  - 原生報告模板已擴充(Lines/Files/Days 統計列、Languages / Session Types /
+    Response Time / Multi-Clauding / Time of Day 圖表、Team Feedback 區塊、
+    copy/collapsible 互動)。本資料夾模板維持 v2.1.207 世代快照,質性七章節 +
+    At-a-Glance 佈局仍與原生對齊,skill 管線不受影響;想跟上新版樣式需整套重抽。

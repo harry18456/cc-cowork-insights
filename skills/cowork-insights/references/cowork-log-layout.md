@@ -53,6 +53,14 @@ local-agent-mode-sessions\
 1. **Python `glob` 的 `**` 預設不進入 `.` 開頭目錄**。transcript 藏在 `local_*/.claude/projects/` 下,v1 用 glob 因此一個真 transcript 都沒讀到,誤把 audit.jsonl 當 session(數量恰好 1:1 所以表面看不出來)。v2 改用 `os.walk`。
 2. 原生 `/insights` 分析窗硬寫死 30 天,且啟動時 `cleanupPeriodDays`(預設 30)會**物理刪除** mtime 逾期檔——複製舊檔進 config dir 也會被砍。
 3. 掛載型 session 的 host 樹裡混有 subagent 檔,不濾會灌水 session 數。
+4. **隔離 session 的 transcript 路徑普遍超過 MAX_PATH(260)**——slug 目錄名內嵌完整
+   outputs 路徑(本機實測 109 個 jsonl 有 58 個超長,最長 510 字元)。`LongPathsEnabled=0`
+   (Windows 出廠預設)時,未加 `\\?\` 前綴的檔案列舉/開檔一律失敗且被兩份 collector 的
+   容錯邏輯靜默吞掉(`os.walk onerror=None` / .NET catch-skip):audit.jsonl 在 ~240 字元的
+   淺層看得到、深層 transcript 消失,表現為 audit 一致性警告 + confirmed 偏低。**Python 也
+   不免疫**——CPython 的長路徑支援同樣依賴該登錄值(python.org 安裝器的「Disable path
+   length limit」按鈕改的就是它)。v0.5.0 起兩份 collector 的所有檔案 I/O 改走 `\\?\`
+   extended-length 路徑,不再受登錄值影響。
 
 ## 漂移排查步驟
 
@@ -63,3 +71,4 @@ audit 一致性警告(audit 檔數 ≠ 隔離 session 數)或數字異常時:
 3. 檢查是否出現新的 jsonl 檔種(比照 audit.jsonl 當年的出現方式)。
 4. 確認掛載型 entrypoint 是否仍為 `claude-desktop`(桌面 app 各分頁共用同一後端,此值不區分 Code / Cowork 分頁)。
 5. `cowork_confirmed.sessions` 為 0 但 ambiguous 很多:**不是漂移**——該機器可能只用桌面 Code 分頁、從未用過 Cowork;走 SKILL.md 第 2b 節問使用者,不要當資料異常排查。
+6. audit 數多於隔離 session 數:先確認 collector 版本 ≥ 0.5.0——舊版在 `LongPathsEnabled=0` 的機器會靜默漏掉 >260 字元路徑的 transcript(見歷史踩雷 4,audit 檔較淺所以看得到),這不是佈局漂移;版本已 ≥ 0.5.0 才往漂移方向查。
