@@ -47,6 +47,15 @@ Optional overrides via env:
     CLAUDE_CONFIG_DIR   -> host config dir (default: %USERPROFILE%\\.claude)
     CLAUDE_COWORK_ROOT  -> explicit local-agent-mode-sessions path
 
+v4 (2026-07-22) vs v3:
+    * All file I/O goes through \\\\?\\ extended-length paths (mirrored in
+      the PowerShell port): isolated-session transcript paths routinely exceed
+      MAX_PATH (260) because the slug dir embeds the full outputs path, and
+      Windows only lifts that limit when LongPathsEnabled=1 -- off on fresh
+      installs. Without the prefix both runtimes silently skipped those
+      files (os.walk onerror=None / open() OSError swallowed), surfacing
+      only as an audit-consistency warning.
+
 v3 (2026-07-16) vs v2:
     * cowork_confidence per session + confirmed/ambiguous summary split.
       Field evidence from a machine that uses the desktop Code tab showed
@@ -109,6 +118,39 @@ def find_lams_roots() -> list[Path]:
     return out
 
 
+def _ext(p) -> str:
+    r"""\\?\-prefixed absolute path for Win32 long-path safety.
+
+    CPython does NOT lift MAX_PATH by itself: its long-path support needs
+    the LongPathsEnabled registry value (the installer's "Disable path
+    length limit" button), which is off on fresh Windows. The \\?\ form
+    bypasses the limit unconditionally. Applied at every file I/O boundary;
+    prefixed strings never escape into program state. No-op off Windows.
+    """
+    s = str(p)
+    if os.name != "nt" or s.startswith("\\\\?\\"):
+        return s
+    s = os.path.abspath(s)
+    if s.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + s[2:]
+    return "\\\\?\\" + s
+
+
+def _strip_ext(s: str) -> str:
+    if s.startswith("\\\\?\\UNC\\"):
+        return "\\\\" + s[8:]
+    if s.startswith("\\\\?\\"):
+        return s[4:]
+    return s
+
+
+def _size_or_zero(fp: Path) -> int:
+    try:
+        return os.stat(_ext(fp)).st_size
+    except OSError:
+        return 0
+
+
 def under_any(path: Path, roots: list[Path]) -> bool:
     rp = path.resolve()
     for r in roots:
@@ -123,11 +165,14 @@ def under_any(path: Path, roots: list[Path]) -> bool:
 def iter_jsonl(root: Path) -> list[Path]:
     # os.walk, NOT glob: glob's "**" skips dot-directories, and the isolated
     # transcripts live under local_<uuid>/.claude/projects/
+    # Walk a \\?\-prefixed root so directories past MAX_PATH are entered
+    # even with LongPathsEnabled off; results are stripped back clean.
     out: list[Path] = []
-    for dirpath, _dirnames, filenames in os.walk(root):
+    for dirpath, _dirnames, filenames in os.walk(_ext(root)):
+        clean = _strip_ext(dirpath)
         for fn in filenames:
             if fn.endswith(".jsonl"):
-                out.append(Path(dirpath) / fn)
+                out.append(Path(clean) / fn)
     return out
 
 
@@ -142,7 +187,7 @@ def file_role(fp: Path) -> str:
 def read_records(fp: Path) -> list[dict]:
     recs = []
     try:
-        with open(fp, encoding="utf-8", errors="ignore") as fh:
+        with open(_ext(fp), encoding="utf-8", errors="ignore") as fh:
             for line in fh:
                 line = line.strip()
                 if not line:
@@ -197,7 +242,7 @@ def analyze_file(fp: Path):
         "token_total": sum(tokens.values()),
         "first": min(ts) if ts else None,
         "last": max(ts) if ts else None,
-        "bytes": fp.stat().st_size if fp.exists() else 0,
+        "bytes": _size_or_zero(fp),
     }
 
 
@@ -299,20 +344,20 @@ def stage_sources(stage_dir: Path, live: list[dict], subagent_files: list[Path],
     startup cleanup."""
     import shutil
     proj = stage_dir / "projects"
-    proj.mkdir(parents=True, exist_ok=True)
+    Path(_ext(proj)).mkdir(parents=True, exist_ok=True)
     n = 0
     for s in live:
         src = Path(s["file"])
         dst_dir = proj / src.parent.name
-        dst_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy(src, dst_dir / src.name)
+        Path(_ext(dst_dir)).mkdir(parents=True, exist_ok=True)
+        shutil.copy(_ext(src), _ext(dst_dir / src.name))
         n += 1
     for fp in subagent_files:  # keep subagent transcripts with their parent
         parent_dir = fp.parent.parent
         if (str(parent_dir.parent.resolve()), parent_dir.name) in live_parent_keys:
             dst_dir = proj / parent_dir.parent.name / parent_dir.name / "subagents"
-            dst_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy(fp, dst_dir / fp.name)
+            Path(_ext(dst_dir)).mkdir(parents=True, exist_ok=True)
+            shutil.copy(_ext(fp), _ext(dst_dir / fp.name))
             n += 1
     return n
 
@@ -490,11 +535,11 @@ def main():
               for s in live]
 
     out_dir = Path(args.output_dir) if args.output_dir else default_output_dir()
-    out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "cowork_full.json").write_text(
+    Path(_ext(out_dir)).mkdir(parents=True, exist_ok=True)
+    Path(_ext(out_dir / "cowork_full.json")).write_text(
         json.dumps({"summary": summary, "sessions": live},
                    ensure_ascii=False, indent=2), encoding="utf-8")
-    (out_dir / "cowork_digest.json").write_text(
+    Path(_ext(out_dir / "cowork_digest.json")).write_text(
         json.dumps({"window": summary["window"], "sessions": digest},
                    ensure_ascii=False, indent=1), encoding="utf-8")
     write_html(out_dir / "cowork_insights.html", summary, live)
@@ -546,7 +591,7 @@ td,th{{border:1px solid #ddd;padding:4px 8px}}th{{background:#f4f4f4;text-align:
 <p>top tools: {esc(summary['tools_top'])}</p>
 <table><tr><th>kind</th><th>conf</th><th>entrypoint</th><th>model</th><th>msgs</th><th>tools</th><th>tokens</th><th>subs</th><th>date</th><th>cwd</th></tr>
 {rows}</table>"""
-    path.write_text(doc, encoding="utf-8")
+    Path(_ext(path)).write_text(doc, encoding="utf-8")
 
 
 if __name__ == "__main__":

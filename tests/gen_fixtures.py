@@ -253,6 +253,40 @@ def main():
                         "cache_creation_input_tokens": 54}),
     ])
 
+    # --- long-path isolated session: real isolated slugs embed the full
+    #     outputs path, pushing transcripts past MAX_PATH (260) no matter
+    #     where the fixture root lives. Exercises the \\?\ extended-length
+    #     I/O in BOTH implementations -- without it, either runtime skips
+    #     these files whenever LongPathsEnabled=0 (the fresh-Windows
+    #     default; note this generator itself then needs a long-path-
+    #     capable python to create them).
+    iso3 = lams / "acct-uuid" / "org-uuid" / "local_lp01"
+    write_jsonl(iso3 / "audit.jsonl", [
+        rec_user("audit twin longpath", RECENT.format(s=70), ep="local-agent"),
+    ])
+    # 240-char component: well past MAX_PATH once joined, but under the
+    # 255-char NTFS per-component ceiling (which \\?\ does NOT lift)
+    longslug = ("C--Users-t-AppData-Roaming-Claude-local-agent-mode-sessions-"
+                "acct-uuid-org-uuid-local-lp01-outputs-" + "x" * 140)
+    slug_d = iso3 / ".claude" / "projects" / longslug
+    write_jsonl(slug_d / "abcd9999.jsonl", [
+        rec_user("deep path isolated work", RECENT.format(s=71), ep="local-agent",
+                 cwd="C:\\Users\\t\\lams\\local_lp01\\outputs"),
+        rec_asst(RECENT.format(s=72), model="claude-sonnet-5", ep="local-agent",
+                 cwd="C:\\Users\\t\\lams\\local_lp01\\outputs",
+                 usage={"input_tokens": 61, "output_tokens": 62,
+                        "cache_read_input_tokens": 63,
+                        "cache_creation_input_tokens": 64}),
+    ])
+    write_jsonl(slug_d / "abcd9999" / "subagents" / "agent-lp.jsonl", [
+        rec_user("deep sub", RECENT.format(s=73), ep="local-agent",
+                 cwd="C:\\Users\\t\\lams\\local_lp01\\outputs"),
+        rec_asst(RECENT.format(s=74), ep="local-agent",
+                 usage={"input_tokens": 1, "output_tokens": 2,
+                        "cache_read_input_tokens": 3,
+                        "cache_creation_input_tokens": 4}),
+    ])
+
     (cfg / "projects").mkdir(parents=True, exist_ok=True)
     print(f"fixtures written under {ROOT}")
 

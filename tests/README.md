@@ -6,7 +6,8 @@ contract. After changing either implementation, re-verify:
 
 ```powershell
 # 1. synthetic fixtures (covers discriminator, tie-breaks, BOM, bad bytes,
-#    bad JSON, emoji clipping, subagent attribution, junction descent)
+#    bad JSON, emoji clipping, subagent attribution, junction descent,
+#    260+-char extended-length paths)
 python tests\gen_fixtures.py $env:TEMP\ci-fix
 
 # 2. run BOTH implementations against the fixture tree

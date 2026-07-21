@@ -50,7 +50,12 @@ compiler accepts it; it depends only on core BCL types so it also compiles
 under pwsh's Roslyn. The JSON parser and serializer intentionally mimic
 Python's json module (raw non-ASCII output, indent style, float repr) and
 file writes mimic Path.write_text on Windows (UTF-8 no BOM, LF -> CRLF) so
-outputs diff clean against the Python implementation.
+outputs diff clean against the Python implementation. All file I/O goes
+through \\?\ extended-length paths (the Python implementation does the
+same): isolated-session transcripts routinely exceed 260 chars because
+the slug dir embeds the full outputs path, and without the prefix the
+Win32 MAX_PATH limit silently hides them whenever the LongPathsEnabled
+registry value is still off -- which is the fresh-Windows default.
 
 Known deviations from cowork_insights.py, all on inputs or environments
 that do not occur with real transcripts (where Python would crash or
@@ -66,9 +71,6 @@ misbehave, this port keeps going):
   * paths are deduplicated textually (case-folded full path), not
     canonically like Path.resolve(): a junction alias of a tree that is
     also scanned directly would double-count where Python dedupes
-  * Windows PowerShell 5.1 runs on .NET Framework, which cannot see paths
-    longer than 260 chars -- such sessions are silently skipped there; on
-    machines with long paths run the Python version or pwsh 7 instead
 #>
 [CmdletBinding()]
 param(
@@ -528,15 +530,55 @@ namespace CoworkInsights
             finally { FindClose(h); }
         }
 
+        // ------------------------------------------------------------------
+        // Extended-length path support. Isolated-session transcripts sit
+        // 300-500 chars deep (the slug dir embeds the full outputs path),
+        // past the Win32 MAX_PATH limit that still applies when the
+        // LongPathsEnabled registry value is off (the fresh-Windows
+        // default). The \\?\ form bypasses the limit unconditionally;
+        // every file I/O here uses it, mirroring cowork_insights.py.
+        // Prefixed strings never escape into program state -- walk
+        // results are stripped back to plain paths.
+        // ------------------------------------------------------------------
+        public static string ExtLen(string path)
+        {
+            if (string.IsNullOrEmpty(path)) { return path; }
+            if (path.StartsWith(@"\\?\", StringComparison.Ordinal)) { return path; }
+            string full;
+            try { full = Path.GetFullPath(path); }
+            catch (Exception) { return path; }
+            if (full.StartsWith(@"\\", StringComparison.Ordinal))
+            {
+                return @"\\?\UNC\" + full.Substring(2);
+            }
+            return @"\\?\" + full;
+        }
+
+        private static string StripExtLen(string path)
+        {
+            if (path.StartsWith(@"\\?\UNC\", StringComparison.Ordinal))
+            {
+                return @"\\" + path.Substring(8);
+            }
+            if (path.StartsWith(@"\\?\", StringComparison.Ordinal))
+            {
+                return path.Substring(4);
+            }
+            return path;
+        }
+
         public static List<string> WalkJsonl(string root)
         {
             List<string> outp = new List<string>();
+            string ext = ExtLen(root);
             bool exists = false;
-            try { exists = Directory.Exists(root); } catch (Exception) { exists = false; }
-            if (exists) { Walk(root, outp); }
+            try { exists = Directory.Exists(ext); } catch (Exception) { exists = false; }
+            if (exists) { Walk(ext, outp); }
             return outp;
         }
 
+        // dir arrives \\?\-prefixed; recursion keeps the prefix, outp gets
+        // plain paths.
         private static void Walk(string dir, List<string> outp)
         {
             string[] files = null;
@@ -551,7 +593,7 @@ namespace CoworkInsights
             {
                 if (Path.GetFileName(files[i]).EndsWith(".jsonl", StringComparison.Ordinal))
                 {
-                    outp.Add(files[i]);
+                    outp.Add(StripExtLen(files[i]));
                 }
             }
             for (int i = 0; i < dirs.Length; i++)
@@ -590,7 +632,7 @@ namespace CoworkInsights
         private static IEnumerable<object> Records(string path)
         {
             StreamReader sr = null;
-            try { sr = new StreamReader(path, Utf8IgnoreErrors, false); }
+            try { sr = new StreamReader(ExtLen(path), Utf8IgnoreErrors, false); }
             catch (Exception) { sr = null; }
             if (sr == null) { yield break; }
             try
@@ -743,7 +785,7 @@ namespace CoworkInsights
             long fbytes = 0;
             try
             {
-                FileInfo fi = new FileInfo(path);
+                FileInfo fi = new FileInfo(ExtLen(path));
                 if (fi.Exists) { fbytes = fi.Length; }
             }
             catch (Exception) { fbytes = 0; }
@@ -996,7 +1038,7 @@ namespace CoworkInsights
         public static void WriteFileUtf8Crlf(string path, string content)
         {
             string t = content.Replace("\n", "\r\n");
-            File.WriteAllText(path, t, new UTF8Encoding(false));
+            File.WriteAllText(ExtLen(path), t, new UTF8Encoding(false));
         }
     }
 }
@@ -1124,23 +1166,25 @@ function Get-Kind($sess, [bool]$inLams) {
 # read-only files, so the flag is dropped around the reset and restored
 # (end state matches shutil.copy + copymode: read-only kept, mtime fresh).
 function Set-FreshMtime([string]$path) {
-    $fi = New-Object System.IO.FileInfo $path
+    $ep = [CoworkInsights.Engine]::ExtLen($path)
+    $fi = New-Object System.IO.FileInfo $ep
     $ro = $fi.IsReadOnly
     if ($ro) { $fi.IsReadOnly = $false }
-    [System.IO.File]::SetLastWriteTimeUtc($path, [System.DateTime]::UtcNow)
+    [System.IO.File]::SetLastWriteTimeUtc($ep, [System.DateTime]::UtcNow)
     if ($ro) { $fi.IsReadOnly = $true }
 }
 
 function Invoke-StageSources([string]$stageDir, $live, $subagentFiles, $liveParentKeys) {
     $proj = Join-Path $stageDir 'projects'
-    [void][System.IO.Directory]::CreateDirectory($proj)
+    [void][System.IO.Directory]::CreateDirectory([CoworkInsights.Engine]::ExtLen($proj))
     $n = 0
     foreach ($s in $live) {
         $src = [string]$s['file']
         $dstDir = Join-Path $proj ([System.IO.Path]::GetFileName([System.IO.Path]::GetDirectoryName($src)))
-        [void][System.IO.Directory]::CreateDirectory($dstDir)
+        [void][System.IO.Directory]::CreateDirectory([CoworkInsights.Engine]::ExtLen($dstDir))
         $dst = Join-Path $dstDir ([System.IO.Path]::GetFileName($src))
-        [System.IO.File]::Copy($src, $dst, $true)
+        [System.IO.File]::Copy([CoworkInsights.Engine]::ExtLen($src),
+            [CoworkInsights.Engine]::ExtLen($dst), $true)
         Set-FreshMtime $dst
         $n++
     }
@@ -1152,9 +1196,10 @@ function Invoke-StageSources([string]$stageDir, $live, $subagentFiles, $livePare
         if ($liveParentKeys.Contains($key)) {
             $dstDir2 = Join-Path (Join-Path (Join-Path $proj ([System.IO.Path]::GetFileName($parentParent))) `
                 ([System.IO.Path]::GetFileName($parentDir))) 'subagents'
-            [void][System.IO.Directory]::CreateDirectory($dstDir2)
+            [void][System.IO.Directory]::CreateDirectory([CoworkInsights.Engine]::ExtLen($dstDir2))
             $dst2 = Join-Path $dstDir2 ([System.IO.Path]::GetFileName($fp))
-            [System.IO.File]::Copy($fp, $dst2, $true)
+            [System.IO.File]::Copy([CoworkInsights.Engine]::ExtLen($fp),
+                [CoworkInsights.Engine]::ExtLen($dst2), $true)
             Set-FreshMtime $dst2
             $n++
         }
@@ -1473,7 +1518,7 @@ function Invoke-Main {
 
     if ($OutputDir) { $outDir = Get-PyPathStr $OutputDir }
     else { $outDir = Get-DefaultOutputDir }
-    [void][System.IO.Directory]::CreateDirectory($outDir)
+    [void][System.IO.Directory]::CreateDirectory([CoworkInsights.Engine]::ExtLen($outDir))
 
     $fullRoot = New-Object CoworkInsights.PyDict
     $fullRoot['summary'] = $summary
